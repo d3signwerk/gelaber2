@@ -1,25 +1,27 @@
 ﻿import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import QuestionButton from './QuestionButton'
+import { askMistral } from '../services/mistral'
 
 /**
  * TextPlayer-Komponente
- * Spielt den Aufklärungsbogentext Satz für Satz vor
+ * Spielt den Text Satz für Satz mit SpeechSynthesis vor
  */
 export default function TextPlayer({ text, language = 'de', voiceId = null }) {
   const { t } = useTranslation()
 
   const [isPlaying, setIsPlaying] = useState(false)
   const [isPaused, setIsPaused] = useState(false)
-  const [showQuestion, setShowQuestion] = useState(false)
   const [highlightedSentenceIndex, setHighlightedSentenceIndex] = useState(-1)
   const [currentSentence, setCurrentSentence] = useState('')
+  const [questionText, setQuestionText] = useState('')
+  const [isAsking, setIsAsking] = useState(false)
   const [error, setError] = useState('')
 
   const currentIndex = useRef(0)
   const isMounted = useRef(true)
+  const isPausedRef = useRef(false)
 
-  const sentences = text.match(/[^.!?]+[.!?]+/g) || [text || '']
+  const sentences = (text?.trim() ? text.split(/(?<=[.!?])\s+/) : [''])
 
   useEffect(() => {
     return () => {
@@ -28,51 +30,109 @@ export default function TextPlayer({ text, language = 'de', voiceId = null }) {
     }
   }, [])
 
-  const getSpeechLanguage = () => (language === 'de' ? 'de-DE' : 'en-US')
+  const getSpeechLanguage = () => {
+    switch (language) {
+      case 'de': return 'de-DE'
+      case 'en': return 'en-US'
+      case 'tr': return 'tr-TR'
+      case 'ru': return 'ru-RU'
+      case 'ar': return 'ar-SA'
+      case 'fa': return 'fa-IR'
+      default: return 'en-US'
+    }
+  }
 
-  const playFromIndex = (index) => {
+  const speakText = (speechText, lang) => {
+    return new Promise((resolve, reject) => {
+      if (typeof window === 'undefined' || !window.speechSynthesis) {
+        reject(new Error('SpeechSynthesis nicht verfügbar'))
+        return
+      }
+
+      window.speechSynthesis.cancel()
+
+      const utterance = new SpeechSynthesisUtterance(speechText)
+      utterance.lang = lang
+
+      let finished = false
+      const cleanup = () => {
+        utterance.onend = null
+        utterance.onerror = null
+      }
+
+      utterance.onend = () => {
+        if (finished) return
+        finished = true
+        cleanup()
+        resolve()
+      }
+
+      utterance.onerror = (event) => {
+        if (finished) return
+        if (event.error === 'interrupted' || event.error === 'cancelled') {
+          finished = true
+          cleanup()
+          resolve()
+          return
+        }
+
+        finished = true
+        cleanup()
+        reject(new Error(event.error || 'SpeechSynthesis Fehler'))
+      }
+
+      window.speechSynthesis.speak(utterance)
+    })
+  }
+
+  const playFromIndex = async (index) => {
     const startIndex = index >= 0 && index < sentences.length ? index : 0
     currentIndex.current = startIndex
     setError('')
-    setShowQuestion(false)
     setIsPaused(false)
+    isPausedRef.current = false
     setIsPlaying(true)
 
-    const sentence = sentences[startIndex]
-    setHighlightedSentenceIndex(startIndex)
-    setCurrentSentence(sentence)
+    const lang = getSpeechLanguage()
 
-    window.speechSynthesis.cancel()
+    while (currentIndex.current < sentences.length && isMounted.current && !isPausedRef.current) {
+      const sentence = sentences[currentIndex.current]
+      setHighlightedSentenceIndex(currentIndex.current)
+      setCurrentSentence(sentence)
 
-    const utterance = new SpeechSynthesisUtterance(sentence)
-    utterance.lang = getSpeechLanguage()
-
-    utterance.onend = () => {
-      if (!isMounted.current) return
-
-      currentIndex.current += 1
-      if (currentIndex.current < sentences.length) {
-        playFromIndex(currentIndex.current)
-      } else {
+      try {
+        await speakText(sentence, lang)
+      } catch (err) {
+        console.error('TTS-Fehler:', err)
+        setError(t('patientView.ttsError'))
         setIsPlaying(false)
+        setIsPaused(false)
         setHighlightedSentenceIndex(-1)
         setCurrentSentence('')
+        return
       }
+
+      if (!isMounted.current || isPausedRef.current) {
+        break
+      }
+
+      currentIndex.current += 1
     }
 
-    utterance.onerror = (event) => {
-      if (event.error !== 'interrupted' && event.error !== 'cancelled') {
-        console.error('TTS-Fehler:', event.error)
-        setError(t('patientView.ttsError'))
-      }
+    if (!isMounted.current) {
+      return
+    }
+
+    if (isPausedRef.current) {
       setIsPlaying(false)
-      setIsPaused(false)
-      setShowQuestion(false)
+      return
+    }
+
+    if (currentIndex.current >= sentences.length) {
+      setIsPlaying(false)
       setHighlightedSentenceIndex(-1)
       setCurrentSentence('')
     }
-
-    window.speechSynthesis.speak(utterance)
   }
 
   const handlePlay = () => {
@@ -85,20 +145,52 @@ export default function TextPlayer({ text, language = 'de', voiceId = null }) {
     window.speechSynthesis.cancel()
     setIsPlaying(false)
     setIsPaused(true)
-    setShowQuestion(true)
+    isPausedRef.current = true
   }
 
   const handleResume = () => {
+    setIsPaused(false)
+    isPausedRef.current = false
     playFromIndex(currentIndex.current)
   }
 
   const handleStop = () => {
     window.speechSynthesis.cancel()
+    currentIndex.current = 0
     setIsPlaying(false)
     setIsPaused(false)
-    setShowQuestion(false)
+    isPausedRef.current = false
     setHighlightedSentenceIndex(-1)
     setCurrentSentence('')
+    setQuestionText('')
+    setError('')
+  }
+
+  const handleSendQuestion = async () => {
+    if (!questionText.trim()) {
+      setError('Bitte geben Sie eine Frage ein.')
+      return
+    }
+
+    setError('')
+    setIsAsking(true)
+    setIsPlaying(false)
+    setIsPaused(true)
+    isPausedRef.current = true
+
+    try {
+      const mistralLanguage = language === 'de' ? 'de' : 'en'
+      const answer = await askMistral(questionText.trim(), text, mistralLanguage)
+      await speakText(answer, getSpeechLanguage())
+    } catch (err) {
+      console.error('Fehler beim Senden der Frage:', err)
+      setError('Fehler beim Senden der Frage. Bitte versuchen Sie es erneut.')
+    } finally {
+      setIsAsking(false)
+      setQuestionText('')
+      setIsPaused(true)
+      isPausedRef.current = true
+    }
   }
 
   return (
@@ -123,7 +215,7 @@ export default function TextPlayer({ text, language = 'de', voiceId = null }) {
               onClick={handlePause}
               className="bg-yellow-600 hover:bg-yellow-700 text-white font-semibold py-4 px-8 rounded-lg transition min-h-[48px] min-w-[48px] text-lg"
             >
-              ⏸ Pause
+              ⏸ {t('patientView.pause') || 'Pause'}
             </button>
             <button
               onClick={handleStop}
@@ -138,7 +230,7 @@ export default function TextPlayer({ text, language = 'de', voiceId = null }) {
               onClick={handleResume}
               className="bg-green-600 hover:bg-green-700 text-white font-semibold py-4 px-8 rounded-lg transition min-h-[48px] min-w-[48px] text-lg"
             >
-              ▶ Weiter
+              ▶ {t('patientView.continue') || 'Weiter'}
             </button>
             <button
               onClick={handleStop}
@@ -159,19 +251,23 @@ export default function TextPlayer({ text, language = 'de', voiceId = null }) {
         </div>
       )}
 
-      {showQuestion && (
-        <div className="bg-yellow-50 border-2 border-yellow-400 rounded-lg p-6">
-          <h3 className="text-lg font-semibold text-yellow-900 mb-4 text-center">
-            Haben Sie eine Frage?
-          </h3>
-          <QuestionButton
-            documentText={text}
-            documentLanguage={language}
-            voiceId={voiceId}
-            onQuestionAnswered={() => {
-              // Optional: Automatisch weitermachen nach Frage
-            }}
+      {isPaused && (
+        <div className="bg-white border border-blue-200 rounded-lg p-6 space-y-4">
+          <textarea
+            value={questionText}
+            onChange={(e) => setQuestionText(e.target.value)}
+            placeholder={t('patientView.questionPlaceholder') || 'Stellen Sie hier Ihre Frage'}
+            style={{ minHeight: 120, fontSize: 20 }}
+            className="w-full p-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isAsking}
           />
+          <button
+            onClick={handleSendQuestion}
+            disabled={isAsking}
+            className="bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 px-8 rounded-lg transition min-w-[150px]"
+          >
+            {isAsking ? t('patientView.sendingQuestion') || 'Frage senden...' : t('patientView.sendQuestion') || 'Frage senden'}
+          </button>
         </div>
       )}
 
@@ -180,7 +276,7 @@ export default function TextPlayer({ text, language = 'de', voiceId = null }) {
           {sentences.map((sentence, index) => (
             <span
               key={index}
-              className={index === highlightedSentenceIndex ? 'highlight-sentence' : ''}
+              className={index === highlightedSentenceIndex ? 'bg-yellow-100 rounded px-1' : ''}
             >
               {sentence}{' '}
             </span>
