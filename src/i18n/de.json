@@ -88,7 +88,12 @@
     "speechError": "Fehler bei der Spracherkennung",
     "noSpeechDetected": "Keine Sprache erkannt. Bitte versuchen Sie es erneut",
     "inactivityWarning": "Sie werden in 5 Minuten automatisch abgemeldet aufgrund von Inaktivität",
-    "sessionEnded": "Sitzung beendet. Rückkehr zum Admin-Dashboard..."
+    "sessionEnded": "Sitzung beendet. Rückkehr zum Admin-Dashboard...",
+    "continue": "Weiter",
+    "questionPlaceholder": "Frage hier eingeben...",
+    "sendQuestion": "Frage senden",
+    "sendingQuestion": "Wird gesendet...",
+    "noDocument": "Kein Dokument ausgewählt"
   },
   "common": {
     "loading": "Wird geladen...",

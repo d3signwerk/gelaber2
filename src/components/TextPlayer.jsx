@@ -2,11 +2,20 @@
 import { useTranslation } from 'react-i18next'
 import { askMistral } from '../services/mistral'
 
-/**
- * TextPlayer-Komponente
- * Spielt den Text Satz für Satz mit SpeechSynthesis vor
- */
-export default function TextPlayer({ text, language = 'de', voiceId = null }) {
+const getVoices = () => {
+  return new Promise((resolve) => {
+    const voices = window.speechSynthesis.getVoices()
+    if (voices.length > 0) {
+      resolve(voices)
+      return
+    }
+    window.speechSynthesis.onvoiceschanged = () => {
+      resolve(window.speechSynthesis.getVoices())
+    }
+  })
+}
+
+export default function TextPlayer({ text, language = 'de' }) {
   const { t } = useTranslation()
 
   const [isPlaying, setIsPlaying] = useState(false)
@@ -24,6 +33,7 @@ export default function TextPlayer({ text, language = 'de', voiceId = null }) {
   const sentences = (text?.trim() ? text.split(/(?<=[.!?])\s+/) : [''])
 
   useEffect(() => {
+    isMounted.current = true
     return () => {
       isMounted.current = false
       window.speechSynthesis.cancel()
@@ -42,46 +52,52 @@ export default function TextPlayer({ text, language = 'de', voiceId = null }) {
     }
   }
 
-  const speakText = (speechText, lang) => {
+  const speakText = async (speechText, lang) => {
+    if (typeof window === 'undefined' || !window.speechSynthesis) {
+      throw new Error('SpeechSynthesis nicht verfügbar')
+    }
+
+    console.log('speakText aufgerufen:', speechText.substring(0, 30))
+    window.speechSynthesis.cancel()
+    await new Promise((r) => setTimeout(r, 150))
+
+    const voices = await getVoices()
+    console.log('Stimmen geladen:', voices.length)
+    const voice =
+      voices.find((v) => v.lang === lang) ||
+      voices.find((v) => v.lang.startsWith(lang.split('-')[0])) ||
+      null
+    console.log('Gewählte Stimme:', voice?.name, voice?.lang)
+
     return new Promise((resolve, reject) => {
-      if (typeof window === 'undefined' || !window.speechSynthesis) {
-        reject(new Error('SpeechSynthesis nicht verfügbar'))
-        return
-      }
-
-      window.speechSynthesis.cancel()
-
       const utterance = new SpeechSynthesisUtterance(speechText)
       utterance.lang = lang
+      if (voice) utterance.voice = voice
 
       let finished = false
-      const cleanup = () => {
-        utterance.onend = null
-        utterance.onerror = null
-      }
+
+      utterance.onstart = () => console.log('ONSTART gefeuert')
 
       utterance.onend = () => {
         if (finished) return
         finished = true
-        cleanup()
+        console.log('ONEND gefeuert')
         resolve()
       }
 
       utterance.onerror = (event) => {
         if (finished) return
+        finished = true
+        console.log('ONERROR:', event.error)
         if (event.error === 'interrupted' || event.error === 'cancelled') {
-          finished = true
-          cleanup()
           resolve()
           return
         }
-
-        finished = true
-        cleanup()
         reject(new Error(event.error || 'SpeechSynthesis Fehler'))
       }
 
       window.speechSynthesis.speak(utterance)
+      console.log('speak() aufgerufen')
     })
   }
 
@@ -94,8 +110,11 @@ export default function TextPlayer({ text, language = 'de', voiceId = null }) {
     setIsPlaying(true)
 
     const lang = getSpeechLanguage()
+    console.log('playFromIndex start, sentences:', sentences.length, 'lang:', lang)
+    console.log('vor while - isMounted:', isMounted.current, 'isPausedRef:', isPausedRef.current)
 
     while (currentIndex.current < sentences.length && isMounted.current && !isPausedRef.current) {
+      console.log('while iteration:', currentIndex.current)
       const sentence = sentences[currentIndex.current]
       setHighlightedSentenceIndex(currentIndex.current)
       setCurrentSentence(sentence)
@@ -119,9 +138,7 @@ export default function TextPlayer({ text, language = 'de', voiceId = null }) {
       currentIndex.current += 1
     }
 
-    if (!isMounted.current) {
-      return
-    }
+    if (!isMounted.current) return
 
     if (isPausedRef.current) {
       setIsPlaying(false)
