@@ -128,6 +128,8 @@ export default function TextPlayer({ text, language = 'de', patientId, documentI
         return
       }
 
+      await new Promise(r => setTimeout(r, 400))
+
       if (!isMounted.current || isPausedRef.current) {
         break
       }
