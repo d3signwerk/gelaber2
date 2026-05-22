@@ -1,6 +1,7 @@
 ﻿import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { askMistral } from '../services/mistral'
+import { logSessionEvent } from '../services/firebase'
 
 const getVoices = () => {
   return new Promise((resolve) => {
@@ -15,7 +16,7 @@ const getVoices = () => {
   })
 }
 
-export default function TextPlayer({ text, language = 'de' }) {
+export default function TextPlayer({ text, language = 'de', patientId, documentId }) {
   const { t } = useTranslation()
 
   const [isPlaying, setIsPlaying] = useState(false)
@@ -44,11 +45,7 @@ export default function TextPlayer({ text, language = 'de' }) {
     switch (language) {
       case 'de': return 'de-DE'
       case 'en': return 'en-US'
-      case 'tr': return 'tr-TR'
-      case 'ru': return 'ru-RU'
-      case 'ar': return 'ar-SA'
-      case 'fa': return 'fa-IR'
-      default: return 'en-US'
+      default: return 'de-DE'
     }
   }
 
@@ -198,6 +195,7 @@ export default function TextPlayer({ text, language = 'de' }) {
     try {
       const mistralLanguage = language === 'de' ? 'de' : 'en'
       const answer = await askMistral(questionText.trim(), text, mistralLanguage)
+      await logSessionEvent(patientId, documentId, questionText.trim(), answer)
       await speakText(answer, getSpeechLanguage())
     } catch (err) {
       console.error('Fehler beim Senden der Frage:', err)

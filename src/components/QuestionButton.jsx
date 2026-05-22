@@ -1,7 +1,10 @@
-﻿import { useState } from 'react'
+import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { askMistral as askMistralAI } from '../services/mistral'
+import { logSessionEvent } from '../services/firebase'
 
-export default function QuestionButton({ documentText, documentLanguage = 'de', onQuestionAnswered }) {
+export default function QuestionButton({ documentText, documentLanguage = 'de', documentId = '', patientId = '', onQuestionAnswered }) {
+  const { t } = useTranslation()
   const [questionText, setQuestionText] = useState('')
   const [lastQuestion, setLastQuestion] = useState('')
   const [aiResponse, setAiResponse] = useState('')
@@ -46,6 +49,7 @@ export default function QuestionButton({ documentText, documentLanguage = 'de', 
 
     try {
       const response = await askMistralAI(trimmedQuestion, documentText, documentLanguage)
+      await logSessionEvent(patientId, documentId, trimmedQuestion, response)
       setAiResponse(response)
       await speakText(response)
 
@@ -76,7 +80,7 @@ export default function QuestionButton({ documentText, documentLanguage = 'de', 
           id="question-input"
           value={questionText}
           onChange={(e) => setQuestionText(e.target.value)}
-          placeholder="Ihre Frage hier eingeben..."
+          placeholder={t('patientView.questionPlaceholder')}
           className="w-full border border-gray-300 rounded-lg p-4 text-lg leading-relaxed min-h-[120px] text-black focus:outline-none focus:ring-2 focus:ring-blue-500"
           style={{ fontSize: '20px' }}
         />
@@ -87,7 +91,7 @@ export default function QuestionButton({ documentText, documentLanguage = 'de', 
         disabled={isProcessing}
         className="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-4 px-6 rounded-lg text-lg min-h-[48px]"
       >
-        Frage senden
+        {isProcessing ? t('patientView.sendingQuestion') : t('patientView.sendQuestion')}
       </button>
 
       {lastQuestion && (

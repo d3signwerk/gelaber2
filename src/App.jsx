@@ -71,6 +71,7 @@ export default function App() {
               currentDocument ? (
                 <PatientView
                   document={currentDocument}
+                  patientId={currentDocument?.patientId}
                   onSessionEnd={handleEndDocumentSession}
                 />
               ) : (

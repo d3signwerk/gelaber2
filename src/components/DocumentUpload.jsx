@@ -7,25 +7,17 @@ import { collection, getDocs } from 'firebase/firestore'
  * DocumentUpload-Komponente
  * Ermöglicht Admin, PDF-Dokumente hochzuladen und zu verwalten
  */
-export default function DocumentUpload({ onDocumentsChange, onStartReading }) {
+export default function DocumentUpload({ onDocumentsChange }) {
   const { t } = useTranslation()
-  
+
   const [documents, setDocuments] = useState([])
   const [documentName, setDocumentName] = useState('')
   const [language, setLanguage] = useState('de')
-  const [voiceId, setVoiceId] = useState('21m00Tcm4TlvDq8ikWAM')
   const [file, setFile] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [currentUser, setCurrentUser] = useState(null)
-
-  // Verfügbare Stimmen
-  const VOICES = [
-    { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Bella' },
-    { id: 'MF3mGyEYCl7XYWbV9V6O', name: 'Elli' },
-    { id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel' }
-  ]
 
   // Dokumentenliste beim Mount laden
   useEffect(() => {
@@ -101,13 +93,11 @@ export default function DocumentUpload({ onDocumentsChange, onStartReading }) {
     setSuccess('')
 
     try {
-      console.log('Speichere Dokument mit Sprache:', language)
-      await uploadDocument(file, documentName, language, voiceId)
-      
+      await uploadDocument(file, documentName, language)
+
       setSuccess(t('documents.uploadSuccess'))
       setDocumentName('')
       setLanguage('de')
-      setVoiceId('21m00Tcm4TlvDq8ikWAM')
       setFile(null)
       
       // Dokumentenliste neu laden
@@ -186,29 +176,6 @@ export default function DocumentUpload({ onDocumentsChange, onStartReading }) {
             >
               <option value="de">Deutsch</option>
               <option value="en">English</option>
-              <option value="tr">Türkisch</option>
-              <option value="ru">Russisch</option>
-              <option value="ar">Arabisch</option>
-              <option value="fa">Persisch (Farsi)</option>
-            </select>
-          </div>
-
-          {/* Stimme auswählen */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Stimme auswählen
-            </label>
-            <select
-              value={voiceId}
-              onChange={(e) => setVoiceId(e.target.value)}
-              disabled={loading}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {VOICES.map((voice) => (
-                <option key={voice.id} value={voice.id}>
-                  {voice.name}
-                </option>
-              ))}
             </select>
           </div>
 
@@ -239,6 +206,11 @@ export default function DocumentUpload({ onDocumentsChange, onStartReading }) {
           >
             {loading ? t('documents.uploading') : t('documents.uploadBtn')}
           </button>
+          {loading && (
+            <p className="text-sm text-blue-700 text-center animate-pulse">
+              Dokument wird hochgeladen und übersetzt... Dies kann einen Moment dauern.
+            </p>
+          )}
           {!currentUser && (
             <p className="text-sm text-yellow-700 mt-2">Bitte anmelden, um Uploads durchführen zu können.</p>
           )}
@@ -268,27 +240,19 @@ export default function DocumentUpload({ onDocumentsChange, onStartReading }) {
                     <td className="px-4 py-3 text-sm text-gray-900">{doc.name}</td>
                     <td className="px-4 py-3 text-sm">
                       <span className="px-3 py-1 bg-blue-100 text-blue-800 rounded-full text-xs font-semibold">
-                        {doc.language === 'de' ? 'DE' : doc.language === 'en' ? 'EN' : doc.language === 'tr' ? 'TR' : doc.language === 'ru' ? 'RU' : doc.language?.toUpperCase()}
+                        {doc.language === 'de' ? 'DE' : doc.language === 'en' ? 'EN' : doc.language?.toUpperCase()}
                       </span>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-600">
                       {doc.createdAt?.toDate?.()?.toLocaleDateString?.() || '-'}
                     </td>
                     <td className="px-4 py-3 text-sm">
-                      <div className="flex gap-2">
-                      <button
-                        onClick={() => onStartReading?.(doc)}
-                        className="text-blue-600 hover:text-blue-800 font-medium text-sm"
-                      >
-                        {t('documents.startReading', 'Vorlesen starten')}
-                      </button>
                       <button
                         onClick={() => handleDeleteDocument(doc.id)}
                         className="text-red-600 hover:text-red-800 font-medium text-sm"
                       >
                         {t('documents.delete')}
                       </button>
-                    </div>
                     </td>
                   </tr>
                 ))}

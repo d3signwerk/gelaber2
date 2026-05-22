@@ -14,6 +14,7 @@ import {
   addDoc,
   doc,
   getDoc,
+  setDoc,
   updateDoc,
   deleteDoc,
   query,
@@ -28,6 +29,7 @@ import {
   getDownloadURL
 } from 'firebase/storage'
 import * as pdfjsLib from 'pdfjs-dist'
+import { translateText } from './mistral'
 
 // Firebase-Konfiguration aus Umgebungsvariablen laden
 const firebaseConfig = {
@@ -126,44 +128,43 @@ export const extractTextFromPDF = async (file) => {
 }
 
 /**
- * Dokument hochladen
+ * Dokument hochladen (mit automatischer Übersetzung in die jeweils andere Sprache)
  */
-export const uploadDocument = async (file, documentName, language, voiceId = '21m00Tcm4TlvDq8ikWAM') => {
+export const uploadDocument = async (file, documentName, language) => {
   try {
-    // Sicherstellen, dass ein authentifizierter User vorhanden ist
     const user = auth.currentUser
-    console.log('Auth currentUser beim Upload:', user)
-    if (!user) {
-      throw new Error('NOT_AUTHENTICATED')
-    }
+    if (!user) throw new Error('NOT_AUTHENTICATED')
 
-    // Text aus PDF extrahieren
     const extractedText = await extractTextFromPDF(file)
 
-    // PDF als Base64 kodieren (Data URL ohne Präfix speichern)
+    const targetLanguage = language === 'de' ? 'en' : 'de'
+    let translatedText = ''
+    try {
+      translatedText = await translateText(extractedText, targetLanguage)
+    } catch (err) {
+      console.warn('Übersetzung fehlgeschlagen:', err)
+      translatedText = extractedText
+    }
+
     const base64Pdf = await new Promise((resolve, reject) => {
       const reader = new FileReader()
       reader.onload = () => {
-        try {
-          const result = reader.result
-          const commaIndex = typeof result === 'string' ? result.indexOf(',') : -1
-          const b64 = commaIndex >= 0 ? result.slice(commaIndex + 1) : result
-          resolve(b64)
-        } catch (e) {
-          reject(e)
-        }
+        const result = reader.result
+        const commaIndex = typeof result === 'string' ? result.indexOf(',') : -1
+        const b64 = commaIndex >= 0 ? result.slice(commaIndex + 1) : result
+        resolve(b64)
       }
       reader.onerror = (e) => reject(e)
       reader.readAsDataURL(file)
     })
 
-    // Dokument direkt in Firestore speichern (Base64 statt Storage)
     const docRef = await addDoc(collection(db, 'documents'), {
       name: documentName,
       language: language,
-      voiceId: voiceId,
       pdfBase64: base64Pdf,
       extractedText: extractedText,
+      extractedTextDe: language === 'de' ? extractedText : translatedText,
+      extractedTextEn: language === 'en' ? extractedText : translatedText,
       createdAt: serverTimestamp(),
       createdBy: user.uid
     })
@@ -172,8 +173,9 @@ export const uploadDocument = async (file, documentName, language, voiceId = '21
       id: docRef.id,
       name: documentName,
       language: language,
-      voiceId: voiceId,
       extractedText: extractedText,
+      extractedTextDe: language === 'de' ? extractedText : translatedText,
+      extractedTextEn: language === 'en' ? extractedText : translatedText,
       createdAt: new Date()
     }
   } catch (error) {
@@ -242,25 +244,34 @@ export const deleteDocument = async (docId) => {
 // ============= PATIENTEN =============
 
 /**
- * Neuen Patienten erstellen
+ * Neuen Patienten mit manueller ID erstellen
  */
-export const createPatient = async (name) => {
+export const createPatient = async (patientId, name) => {
   try {
-    const patientRef = await addDoc(collection(db, 'patients'), {
+    const patientRef = doc(db, 'patients', patientId)
+    await setDoc(patientRef, {
+      patientId: patientId,
       name: name,
-      assignedDocumentId: null,
       createdAt: serverTimestamp(),
       createdBy: auth.currentUser.uid
     })
-    
-    return {
-      id: patientRef.id,
-      name: name,
-      assignedDocumentId: null,
-      createdAt: new Date()
-    }
+    return { id: patientId, patientId, name, createdAt: new Date() }
   } catch (error) {
     console.error('Fehler beim Erstellen des Patienten:', error)
+    throw error
+  }
+}
+
+export const getPatientByCustomId = async (patientId) => {
+  try {
+    const patientRef = doc(db, 'patients', patientId)
+    const patientSnap = await getDoc(patientRef)
+    if (patientSnap.exists()) {
+      return { id: patientSnap.id, ...patientSnap.data() }
+    }
+    return null
+  } catch (error) {
+    console.error('Fehler beim Abrufen des Patienten:', error)
     throw error
   }
 }
@@ -336,6 +347,20 @@ export const deletePatient = async (patientId) => {
   }
 }
 
+export const logSessionEvent = async (patientId, documentId, question, answer) => {
+  try {
+    await addDoc(collection(db, 'sessionLogs'), {
+      patientId: patientId,
+      documentId: documentId,
+      question: question,
+      answer: answer,
+      timestamp: serverTimestamp()
+    })
+  } catch (error) {
+    console.error('Fehler beim Loggen:', error)
+  }
+}
+
 export default {
   auth,
   db,
@@ -353,5 +378,7 @@ export default {
   getPatients,
   getPatient,
   assignDocumentToPatient,
-  deletePatient
+  deletePatient,
+  logSessionEvent,
+  getPatientByCustomId
 }

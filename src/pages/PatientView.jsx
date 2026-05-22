@@ -8,7 +8,7 @@ import QuestionButton from '../components/QuestionButton'
  * Hauptoberfläche für Patienten im Kiosk-Modus
  * Optimiert für Tablet mit großen Buttons (48px+)
  */
-export default function PatientView({ document: selectedDocument, onSessionEnd }) {
+export default function PatientView({ document: selectedDocument, patientId, onSessionEnd }) {
   const { t, i18n } = useTranslation()
   
   const [currentDoc, setCurrentDoc] = useState(selectedDocument)
@@ -141,10 +141,6 @@ export default function PatientView({ document: selectedDocument, onSessionEnd }
                 {t('patientView.language')}: <span className="font-semibold">
                   {currentDoc.language === 'de' ? 'Deutsch' :
                currentDoc.language === 'en' ? 'English' :
-               currentDoc.language === 'tr' ? 'Türkçe' :
-               currentDoc.language === 'ru' ? 'Russisch' :
-               currentDoc.language === 'ar' ? 'Arabisch' :
-               currentDoc.language === 'fa' ? 'Persisch' :
                currentDoc.language}
                 </span>
               </span>
@@ -173,6 +169,8 @@ export default function PatientView({ document: selectedDocument, onSessionEnd }
             text={currentDoc.extractedText}
             language={currentDoc.language}
             voiceId={currentDoc.voiceId}
+            patientId={patientId}
+            documentId={currentDoc.id}
           />
         </section>
 
@@ -183,7 +181,8 @@ export default function PatientView({ document: selectedDocument, onSessionEnd }
           <QuestionButton
             documentText={currentDoc.extractedText}
             documentLanguage={currentDoc.language}
-            voiceId={currentDoc.voiceId}
+            documentId={currentDoc.id}
+            patientId={patientId}
           />
         </section>
       </div>
